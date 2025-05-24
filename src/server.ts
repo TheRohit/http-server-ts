@@ -1,7 +1,11 @@
 import * as net from "net";
+import * as path from "path";
+import * as fs from "fs/promises";
+import { mimeTypes } from "./config";
 
 const PORT = 3000;
 const HOST = "127.0.0.1";
+const PATH_ROOT = path.join(__dirname, "../public");
 
 const bodyContent = `<!DOCTYPE html>
 <html>
@@ -16,7 +20,7 @@ const server = net.createServer((socket) => {
   //create empty buffer
   let requestBuffer: Buffer = Buffer.alloc(0);
 
-  socket.on("data", (chunk) => {
+  socket.on("data", async (chunk) => {
     requestBuffer = Buffer.concat([requestBuffer, chunk]);
 
     const requestString = requestBuffer.toString("utf-8");
@@ -37,7 +41,7 @@ const server = net.createServer((socket) => {
 
       const parts = requestLine.split(" ");
       const method = parts[0];
-      const path = parts[1];
+      let requestedFilePath = parts[1];
       const httpVersion = parts[2];
 
       //parse headers
@@ -52,34 +56,101 @@ const server = net.createServer((socket) => {
         headers[key] = value;
       });
 
-      console.log("\n--- Parsed Request ---");
       console.log("Method:", method);
-      console.log("Path:", path);
+      console.log("Path:", requestedFilePath);
       console.log("HTTP Version:", httpVersion);
       console.log("Headers:", headers);
 
-      if (body) {
-        console.log("Body:", body);
+      //response
+
+      let statusCode = 200;
+      let statusText = "OK";
+      let contentType = "application/octet-stream"; //defaulting to unknown
+      let responseBody: Buffer | string = "";
+
+      try {
+        if (requestedFilePath === "/") {
+          requestedFilePath = "/index.html";
+        }
+
+        //security: Prevent directory traversal (e.g., requesting '../../secret.txt')
+        const normalizedPath = path
+          .normalize(requestedFilePath)
+          .replace(/^(\.\.(\/|\\|$))+/, "");
+        const filePath = path.join(PATH_ROOT, normalizedPath);
+
+        //ensure resolved path is within PATH_ROOT
+
+        if (!filePath.startsWith(PATH_ROOT + path.sep)) {
+          statusCode = 403;
+          statusText = "Forbidden";
+          contentType = "text/html";
+          responseBody =
+            "<h1>403 Forbidden</h1><p>Access to the requested resource is forbidden.</p>";
+          throw new Error("Forbidden path access attempt");
+        }
+
+        const stats = await fs.stat(filePath);
+
+        if (!stats.isFile()) {
+          statusCode = 404;
+          statusText = "Not Found";
+          contentType = "text/html";
+          responseBody =
+            "<h1>404 Not Found</h1><p>The requested file was not found or is a directory.</p>";
+          throw new Error("Not a file or directory");
+        }
+
+        responseBody = await fs.readFile(filePath);
+        const fileExtension = path.extname(filePath).toLowerCase();
+
+        contentType = mimeTypes[fileExtension] || "application/octet-stream";
+      } catch (err: any) {
+        if (err?.code === "ENOENT") {
+          statusCode = 404;
+          statusText = "Not Found";
+          contentType = "text/html";
+          responseBody =
+            "<h1>404 Not Found</h1><p>The requested URL was not found on this server.</p>";
+        } else if (statusCode !== 403) {
+          // If it wasn't a forbidden path error
+          statusCode = 500;
+          statusText = "Internal Server Error";
+          contentType = "text/html";
+          responseBody =
+            "<h1>500 Internal Server Error</h1><p>Something went wrong on the server.</p>";
+          console.error(`Error serving ${requestedFilePath}:`, err.message);
+        }
+      } finally {
+        const contentLength = Buffer.isBuffer(responseBody)
+          ? responseBody.length
+          : Buffer.byteLength(responseBody.toString(), "utf8");
+
+        const date = new Date().toUTCString();
+
+        const responseHeaders = [
+          `HTTP/1.1 ${statusCode} ${statusText}`,
+          `Content-Type: ${contentType}${
+            contentType.startsWith("text/") ? "; charset=utf-8" : ""
+          }`,
+          `Content-Length: ${contentLength}`,
+          "Connection: close",
+          "Server: RohitHTTPServer/0.69",
+          `Date: ${date}`,
+        ].join("\r\n");
+
+        const fullResponse = `${responseHeaders}\r\n\r\n`;
+
+        socket.write(fullResponse);
+        if (responseBody) {
+          socket.write(responseBody);
+        }
+
+        socket.end();
       }
+
+      requestBuffer = Buffer.alloc(0);
     }
-
-    const contentLength = Buffer.byteLength(bodyContent, "utf8");
-    const date = new Date().toUTCString();
-
-    const responseHeaders = [
-      "HTTP/1.1 200 OK",
-      "Content-Type: text/html; charset=utf-8",
-      `Content-Length: ${contentLength}`,
-      "Connection: close",
-      "Server: RohitHTTPServer/1.0",
-      `Date: ${date}`,
-    ].join("\r\n");
-
-    const fullResponse = `${responseHeaders}\r\n\r\n${bodyContent}`;
-
-    socket.write(fullResponse);
-
-    socket.end();
   });
 
   socket.on("end", () => {
