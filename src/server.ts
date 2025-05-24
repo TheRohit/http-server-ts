@@ -8,12 +8,6 @@ const PORT = 3000;
 const HOST = "127.0.0.1";
 const PATH_ROOT = path.join(__dirname, "../public");
 
-const bodyContent = `<!DOCTYPE html>
-<html>
-<head><title>My HTTP Server</title></head>
-<body><h1>Hello bruh</h1></body>
-</html>`;
-
 addRoute("GET", "/api/hello", handleApiHello);
 
 const server = net.createServer((socket) => {
