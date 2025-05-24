@@ -14,50 +14,50 @@ export type RequestHandler = (
   context: RequestContext
 ) => Promise<void>;
 
-export class Router {
-  private routes: Map<string, RequestHandler> = new Map();
+const routes: Map<string, RequestHandler> = new Map();
 
-  addRoute(method: string, path: string, handler: RequestHandler): void {
-    this.routes.set(`${method} ${path}`, handler);
-  }
-
-  findRoute(method: string, path: string): RequestHandler | undefined {
-    return this.routes.get(`${method} ${path}`);
-  }
-
-  async handleRequest(
-    socket: net.Socket,
-    request: HttpRequest
-  ): Promise<boolean> {
-    const routeKey = `${request.method} ${request.path}`;
-    const handler = this.routes.get(routeKey);
-
-    if (handler) {
-      console.log(`Matched API route: ${routeKey}`);
-      await handler(socket, {
-        method: request.method,
-        path: request.path,
-        httpVersion: request.httpVersion,
-        headers: request.headers,
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  getAllRoutes(): Array<{ method: string; path: string }> {
-    return Array.from(this.routes.keys()).map((key) => {
-      const [method, path] = key.split(" ", 2);
-      return { method, path };
-    });
-  }
+export function addRoute(
+  method: string,
+  path: string,
+  handler: RequestHandler
+): void {
+  routes.set(`${method} ${path}`, handler);
 }
 
-export const router = new Router();
+export function findRoute(
+  method: string,
+  path: string
+): RequestHandler | undefined {
+  return routes.get(`${method} ${path}`);
+}
 
-export const routes = router["routes"];
-export const addRoute = router.addRoute.bind(router);
+export async function handleRequest(
+  socket: net.Socket,
+  request: HttpRequest
+): Promise<boolean> {
+  const routeKey = `${request.method} ${request.path}`;
+  const handler = routes.get(routeKey);
+
+  if (handler) {
+    console.log(`Matched API route: ${routeKey}`);
+    await handler(socket, {
+      method: request.method,
+      path: request.path,
+      httpVersion: request.httpVersion,
+      headers: request.headers,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+export function getAllRoutes(): Array<{ method: string; path: string }> {
+  return Array.from(routes.keys()).map((key) => {
+    const [method, path] = key.split(" ", 2);
+    return { method, path };
+  });
+}
 
 export const handleApiHello: RequestHandler = async (socket, context) => {
   const jsonResponse = {
@@ -67,3 +67,5 @@ export const handleApiHello: RequestHandler = async (socket, context) => {
 
   buildJsonResponse(socket, jsonResponse, { shouldKeepAlive: false });
 };
+
+export { routes };

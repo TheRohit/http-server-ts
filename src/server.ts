@@ -1,6 +1,6 @@
 import * as net from "net";
 import * as path from "path";
-import { addRoute, handleApiHello, router } from "./router";
+import { addRoute, handleApiHello, handleRequest } from "./router";
 import { requestParser } from "./requestParser";
 import { serveStaticFile } from "./staticFileHandler";
 
@@ -43,7 +43,7 @@ const server = net.createServer((socket) => {
     }
 
     try {
-      const routeHandled = await router.handleRequest(socket, request);
+      const routeHandled = await handleRequest(socket, request);
 
       if (!routeHandled) {
         await serveStaticFile(socket, request.path, {
@@ -52,9 +52,7 @@ const server = net.createServer((socket) => {
         });
       }
 
-      // Reset buffer for next request
       if (shouldKeepAlive) {
-        // Remove the processed request from buffer
         requestBuffer = requestBuffer.subarray(parseResult.bytesConsumed);
       } else {
         requestBuffer = Buffer.alloc(0);
