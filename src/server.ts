@@ -2,6 +2,7 @@ import * as net from "net";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { mimeTypes } from "./config";
+import { addRoute, handleApiHello, routes } from "./router";
 
 const PORT = 3000;
 const HOST = "127.0.0.1";
@@ -12,6 +13,8 @@ const bodyContent = `<!DOCTYPE html>
 <head><title>My HTTP Server</title></head>
 <body><h1>Hello bruh</h1></body>
 </html>`;
+
+addRoute("GET", "/api/hello", handleApiHello);
 
 const server = net.createServer((socket) => {
   console.log(
@@ -60,6 +63,23 @@ const server = net.createServer((socket) => {
       console.log("Path:", requestedFilePath);
       console.log("HTTP Version:", httpVersion);
       console.log("Headers:", headers);
+      if (body) {
+        console.log(body);
+      }
+
+      const routeKey = `${method} ${requestedFilePath}`;
+      const handler = routes.get(routeKey);
+      if (handler) {
+        console.log(`Matched API route: ${routeKey}`);
+        await handler(socket, {
+          method,
+          path: requestedFilePath,
+          httpVersion,
+          headers,
+        });
+        requestBuffer = Buffer.alloc(0); //reset buffer and we are done with the req
+        return;
+      }
 
       //response
 
