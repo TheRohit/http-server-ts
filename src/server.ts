@@ -50,8 +50,14 @@ const server = net.createServer((socket) => {
         const firstColonIdx = line.indexOf(":");
         const key = line.substring(0, firstColonIdx).trim();
         const value = line.substring(firstColonIdx + 1).trim();
-        headers[key] = value;
+        headers[key.toLowerCase()] = value;
       });
+
+      const connectionHeader = headers["connection"];
+      const shouldKeepAlive =
+        httpVersion === "HTTP/1.1" &&
+        connectionHeader &&
+        connectionHeader.toLowerCase() === "keep-alive";
 
       console.log("Method:", method);
       console.log("Path:", requestedFilePath);
@@ -136,6 +142,10 @@ const server = net.createServer((socket) => {
           console.error(`Error serving ${requestedFilePath}:`, err.message);
         }
       } finally {
+        const connectionControlHeader = shouldKeepAlive
+          ? "keep-alive"
+          : "close";
+
         const contentLength = Buffer.isBuffer(responseBody)
           ? responseBody.length
           : Buffer.byteLength(responseBody.toString(), "utf8");
@@ -148,7 +158,7 @@ const server = net.createServer((socket) => {
             contentType.startsWith("text/") ? "; charset=utf-8" : ""
           }`,
           `Content-Length: ${contentLength}`,
-          "Connection: close",
+          `Connection: ${connectionControlHeader}`,
           "Server: RohitHTTPServer/0.69",
           `Date: ${date}`,
         ].join("\r\n");
@@ -159,8 +169,18 @@ const server = net.createServer((socket) => {
         if (responseBody) {
           socket.write(responseBody);
         }
-
-        socket.end();
+        if (!shouldKeepAlive) {
+          socket.end();
+        } else {
+          requestBuffer = Buffer.alloc(0);
+          if (headerEndIndex + 4 < requestBuffer.length) {
+            // If there's data left *after* the current request's headers and body,
+            // it means it's part of the next request.
+            requestBuffer = requestBuffer.subarray(headerEndIndex + 4);
+          } else {
+            requestBuffer = Buffer.alloc(0); // No residual data, clear entirely
+          }
+        }
       }
 
       requestBuffer = Buffer.alloc(0);
